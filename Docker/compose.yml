@@ -7,43 +7,68 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
-      - "9090:9090"
+      - "9090:9090"  # Optional, can be removed if you want only proxy access
     restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=prometheus.wesam-aljabiri.de
+      - LETSENCRYPT_HOST=prometheus.wesam-aljabiri.de
+      - LETSENCRYPT_EMAIL=wesam.aljaberi@gmail.com
 
   node-exporter:
     image: prom/node-exporter
     container_name: node-exporter
     ports:
-      - "9100:9100"
+      - "9100:9100" # Optional, same as above
     restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=node-exporter.wesam-aljabiri.de
+      - LETSENCRYPT_HOST=node-exporter.wesam-aljabiri.de
+      - LETSENCRYPT_EMAIL=wesam.aljaberi@gmail.com
 
   grafana:
     image: grafana/grafana
     container_name: grafana
     ports:
-      - "3000:3000"
-    #environment:
-    # - GF_SERVER_ROOT_URL=http://wesam-aljabiri.de/grafana/
+      - "3000:3000"  # Optional
     environment:
-    - GF_SERVER_ROOT_URL=http://grafana.wesam-aljabiri.de/
-
+      - GF_SERVER_ROOT_URL=https://grafana.wesam-aljabiri.de/
+      - VIRTUAL_HOST=grafana.wesam-aljabiri.de
+      - LETSENCRYPT_HOST=grafana.wesam-aljabiri.de
+      - LETSENCRYPT_EMAIL=wesam.aljaberi@gmail.com
     volumes:
       - grafana-data:/var/lib/grafana
     restart: unless-stopped
 
-  nginx:
-    image: nginx:latest
-    container_name: nginx-reverse-proxy
+  # nginx-proxy to handle reverse proxy + HTTPS
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    container_name: nginx-proxy
+    restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./html:/usr/share/nginx/html:ro
-    depends_on:
-      - grafana
-      - prometheus
-      - node-exporter
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
+    environment:
+      - DEFAULT_HOST=wesam-aljabiri.de
+
+  # Let's Encrypt companion for auto SSL certs
+  nginx-letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    container_name: nginx-letsencrypt
     restart: unless-stopped
+    depends_on:
+      - nginx-proxy
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./certs:/etc/nginx/certs
+      - ./vhost.d:/etc/nginx/vhost.d
+      - ./html:/usr/share/nginx/html
 
 volumes:
   grafana-data:
